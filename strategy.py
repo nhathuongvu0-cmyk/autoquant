@@ -17,7 +17,7 @@ PARAMS = {
     'exit_period': 15,        # 加長到 15 根 4H
     
     # 趨勢過濾
-    'use_trend_filter': True,
+    'use_trend_filter': False,  # 關閉趨勢過濾
     'trend_period': 50,       # EMA50 過濾
     
     # 出場（放寬止損）
