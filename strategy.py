@@ -12,9 +12,9 @@ import pandas as pd
 PARAMS = {
     'position_size': 0.25,
     
-    # Donchian 參數（更長）
-    'entry_period': 40,       # 加長到 40 根 4H (6.7天)
-    'exit_period': 20,        # 加長到 20 根 4H
+    # Donchian 參數（平衡）
+    'entry_period': 30,       # 30 根 4H (5天)
+    'exit_period': 15,        # 15 根 4H
     
     # 趨勢過濾
     'use_trend_filter': False,  # 關閉趨勢過濾
