@@ -107,18 +107,21 @@ def generate_signal(df: pd.DataFrame, idx: int, position: int, params: dict, che
         allow_long = True
         allow_short = True
     
+    # ===== RSI 動量過濾 =====
+    rsi = row['rsi']
+    
     # ===== Donchian 突破 =====
     sl_mult = params.get('sl_atr_mult', 2.0)
     
-    # 突破 entry_period 高點做多
-    if allow_long and high > entry_high:
+    # 突破 entry_period 高點做多（RSI > 50 確認動量）
+    if allow_long and high > entry_high and rsi > 50:
         _entry_price = close
         _entry_idx = idx
         _sl_price = close - sl_mult * atr
         return 1
     
-    # 跌破 entry_period 低點做空
-    if allow_short and low < entry_low:
+    # 跌破 entry_period 低點做空（RSI < 50 確認動量）
+    if allow_short and low < entry_low and rsi < 50:
         _entry_price = close
         _entry_idx = idx
         _sl_price = close + sl_mult * atr
