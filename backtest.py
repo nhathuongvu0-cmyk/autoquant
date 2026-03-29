@@ -21,9 +21,11 @@ SLIPPAGE = 0.0005  # 0.05% 滑點
 INITIAL_CAPITAL = 10000
 DATA_DIR = Path(__file__).parent / "data"
 
-# 訓練/驗證分割
-TRAIN_END = "2023-12-31"
-VAL_START = "2024-01-01"
+# 訓練/驗證/測試分割
+TRAIN_END = "2022-12-31"      # 訓練集結束
+VAL_START = "2023-01-01"      # 驗證集開始
+VAL_END = "2024-12-31"        # 驗證集結束
+TEST_START = "2025-01-01"     # 測試集開始
 
 # ============== 數據加載 ==============
 def load_data(symbol: str = "btc") -> pd.DataFrame:
@@ -171,8 +173,25 @@ def run_backtest(df: pd.DataFrame, strategy_func, params: dict = None) -> Tuple[
             close_signal = strategy_func(df, i, position, params, check_exit=True)
             
             if close_signal or signal == -position:
-                # 平倉
-                exit_price = next_row['open'] * (1 - FEE * np.sign(position))
+                # 平倉 - 使用實際觸發價格
+                # 優先檢查 SL/TP 是否在當前 bar 觸發
+                sl_price = getattr(strategy_func, '_sl_price', None) or params.get('_sl_price', 0)
+                tp_price = getattr(strategy_func, '_tp_price', None) or params.get('_tp_price', 0)
+                
+                if position == 1:  # 多單
+                    if row['low'] <= sl_price and sl_price > 0:
+                        exit_price = sl_price * (1 - FEE)  # SL 觸發
+                    elif row['high'] >= tp_price and tp_price > 0:
+                        exit_price = tp_price * (1 - FEE)  # TP 觸發
+                    else:
+                        exit_price = next_row['open'] * (1 - FEE)  # 其他出場
+                else:  # 空單
+                    if row['high'] >= sl_price and sl_price > 0:
+                        exit_price = sl_price * (1 + FEE)  # SL 觸發
+                    elif row['low'] <= tp_price and tp_price > 0:
+                        exit_price = tp_price * (1 + FEE)  # TP 觸發
+                    else:
+                        exit_price = next_row['open'] * (1 + FEE)  # 其他出場
                 
                 pnl_pct = (exit_price / entry_price - 1) * position
                 pnl = equity[-1] * pnl_pct * params.get('position_size', 0.25)
@@ -220,10 +239,11 @@ def main():
     df_btc = prepare_data(df_btc)
     print(f"  BTC: {len(df_btc)} bars ({df_btc['time'].min()} to {df_btc['time'].max()})")
     
-    # 分割訓練/驗證
+    # 分割訓練/驗證/測試
     train_df = df_btc[df_btc['time'] <= TRAIN_END].copy().reset_index(drop=True)
-    val_df = df_btc[df_btc['time'] >= VAL_START].copy().reset_index(drop=True)
-    print(f"  Train: {len(train_df)} bars | Val: {len(val_df)} bars")
+    val_df = df_btc[(df_btc['time'] >= VAL_START) & (df_btc['time'] <= VAL_END)].copy().reset_index(drop=True)
+    test_df = df_btc[df_btc['time'] >= TEST_START].copy().reset_index(drop=True)
+    print(f"  Train: {len(train_df)} | Val: {len(val_df)} | Test: {len(test_df)} bars")
     
     # 導入策略
     print("\n[2/4] Loading strategy...")
@@ -242,11 +262,18 @@ def main():
     print(f"  Train: {train_metrics['n_trades']} trades, PF={train_metrics['pf']}, DSR={train_metrics['dsr']}")
     
     # 驗證集回測
-    print("\n[4/4] Running backtest (validation)...")
+    print("\n[4/5] Running backtest (validation)...")
     reset_state()
     val_trades, val_returns = run_backtest(val_df, generate_signal, PARAMS)
     val_metrics = calculate_metrics(val_trades, val_returns, n_trials=1)
     print(f"  Val: {val_metrics['n_trades']} trades, PF={val_metrics['pf']}, DSR={val_metrics['dsr']}")
+    
+    # 測試集回測
+    print("\n[5/5] Running backtest (test)...")
+    reset_state()
+    test_trades, test_returns = run_backtest(test_df, generate_signal, PARAMS)
+    test_metrics = calculate_metrics(test_trades, test_returns, n_trials=1)
+    print(f"  Test: {test_metrics['n_trades']} trades, PF={test_metrics['pf']}, DSR={test_metrics['dsr']}")
     
     # 輸出結果
     elapsed = time.time() - start_time
@@ -272,8 +299,17 @@ def main():
     print(f"RESULT:val_trades={val_metrics['n_trades']}")
     print(f"RESULT:val_return={val_metrics['total_return']}")
     
-    # 綜合評分（主要看驗證集 DSR）
-    print(f"\n>>> PRIMARY METRIC: val_dsr = {val_metrics['dsr']} <<<")
+    print("\n--- TEST RESULTS ---")
+    print(f"RESULT:test_pf={test_metrics['pf']}")
+    print(f"RESULT:test_sharpe={test_metrics['sharpe']}")
+    print(f"RESULT:test_maxdd={test_metrics['maxdd']}")
+    print(f"RESULT:test_dsr={test_metrics['dsr']}")
+    print(f"RESULT:test_trades={test_metrics['n_trades']}")
+    print(f"RESULT:test_return={test_metrics['total_return']}")
+    
+    # 綜合評分（主要看測試集 DSR）
+    print(f"\n>>> PRIMARY METRIC: test_dsr = {test_metrics['dsr']} <<<")
+    print(f">>> 過擬合檢查: val_dsr={val_metrics['dsr']:.2f} vs test_dsr={test_metrics['dsr']:.2f} <<<")
 
 
 if __name__ == "__main__":

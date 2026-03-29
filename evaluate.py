@@ -42,12 +42,18 @@ def calculate_metrics(trades: List[Dict], equity_curve: np.ndarray, n_trials: in
     # POB (Probability of Breakeven / Win Rate)
     pob = np.sum(pnls > 0) / len(pnls)
     
-    # Sharpe Ratio (年化)
-    # 假設 4H 數據，一年約 2190 個 4H bars
-    periods_per_year = 2190
-    mean_return = np.mean(returns)
-    std_return = np.std(returns)
-    sharpe = (mean_return * periods_per_year) / (std_return * np.sqrt(periods_per_year)) if std_return > 0 else 0.0
+    # Sharpe Ratio (trade-level，年化)
+    # 使用交易收益計算，更準確
+    trade_returns = np.array([t['return'] for t in trades])
+    if len(trade_returns) < 2:
+        sharpe = 0.0
+    else:
+        # 估算年化交易次數
+        trades_per_year = len(trades) / (len(equity_curve) / 2190) if len(equity_curve) > 0 else 100
+        mean_trade_return = np.mean(trade_returns)
+        std_trade_return = np.std(trade_returns)
+        # 年化 Sharpe = mean * sqrt(N) / std
+        sharpe = (mean_trade_return * np.sqrt(trades_per_year)) / std_trade_return if std_trade_return > 0 else 0.0
     
     # Max Drawdown
     cumulative = np.cumprod(1 + equity_curve)
@@ -99,7 +105,7 @@ def calculate_dsr(returns: np.ndarray, sharpe: float, n_trials: int) -> float:
     # E[max(SR)] ≈ (1 - γ) × Φ^(-1)(1 - 1/N) where γ ≈ 0.5772
     if n_trials > 1:
         gamma = 0.5772  # Euler-Mascheroni constant
-        expected_max_sr = (1 - gamma) * stats.norm.ppf(1 - 1 / n_trials) * se_sharpe
+        expected_max_sr = (1 - gamma) * stats.norm.ppf(1 - 1 / n_trials)  # 修復：不乘 se_sharpe
     else:
         expected_max_sr = 0
     
