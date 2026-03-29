@@ -110,6 +110,11 @@ def generate_signal(df: pd.DataFrame, idx: int, position: int, params: dict, che
     # ===== RSI 動量過濾 =====
     rsi = row['rsi']
     
+    # ===== ADX 趨勢強度過濾 =====
+    adx = row['adx']
+    if adx < 15:  # ADX < 15 = 無趨勢，不交易（放寬）
+        return 0
+    
     # ===== Donchian 突破 =====
     sl_mult = params.get('sl_atr_mult', 2.0)
     
