@@ -12,16 +12,16 @@ import pandas as pd
 PARAMS = {
     'position_size': 0.25,
     
-    # Donchian 參數
-    'entry_period': 20,       # 20 根 4H 突破入場
-    'exit_period': 10,        # 10 根 4H 突破出場
+    # Donchian 參數（加長）
+    'entry_period': 30,       # 加長到 30 根 4H (5天)
+    'exit_period': 15,        # 加長到 15 根 4H
     
     # 趨勢過濾
     'use_trend_filter': True,
     'trend_period': 50,       # EMA50 過濾
     
-    # 出場
-    'sl_atr_mult': 2.0,
+    # 出場（放寬止損）
+    'sl_atr_mult': 2.5,
     
     'cooldown_bars': 2,
 }
