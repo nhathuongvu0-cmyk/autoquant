@@ -1,2 +1,3 @@
 commit	pf	sharpe	maxdd	pob	dsr	status	description
 baseline	1.10	1.96	0.0546	0.4241	20.43	keep	EMA8/21 crossover baseline
+5c76118	1.05	1.02	0.1269	0.3203	9.96	keep	Donchian 20/10 + EMA50 filter

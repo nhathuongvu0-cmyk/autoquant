@@ -1,8 +1,8 @@
 """
-strategy.py — 策略定義文件
-這是 AI agent 修改的文件！
+strategy.py — autoquant 實驗文件
 
-Baseline: 簡單 EMA 交叉策略（先確保引擎正常）
+實驗 #3: Donchian 通道突破 (海龜交易法)
+來源: Richard Dennis / Turtle Traders
 """
 
 import numpy as np
@@ -11,72 +11,117 @@ import pandas as pd
 # ============== 策略參數 ==============
 PARAMS = {
     'position_size': 0.25,
-    'fast_ema': 8,
-    'slow_ema': 21,
-    'tp_pct': 0.02,   # 2% TP
-    'sl_pct': 0.01,   # 1% SL
-    'cooldown_bars': 3,
+    
+    # Donchian 參數
+    'entry_period': 20,       # 20 根 4H 突破入場
+    'exit_period': 10,        # 10 根 4H 突破出場
+    
+    # 趨勢過濾
+    'use_trend_filter': True,
+    'trend_period': 50,       # EMA50 過濾
+    
+    # 出場
+    'sl_atr_mult': 2.0,
+    
+    'cooldown_bars': 2,
 }
 
 # ============== 內部狀態 ==============
 _last_exit_idx = -999
 _entry_price = 0
+_entry_idx = 0
+_sl_price = 0
 
 
 def reset_state():
-    global _last_exit_idx, _entry_price
+    global _last_exit_idx, _entry_price, _entry_idx, _sl_price
     _last_exit_idx = -999
     _entry_price = 0
+    _entry_idx = 0
+    _sl_price = 0
 
 
 def generate_signal(df: pd.DataFrame, idx: int, position: int, params: dict, check_exit: bool = False) -> int:
-    global _last_exit_idx, _entry_price
+    global _last_exit_idx, _entry_price, _entry_idx, _sl_price
     
-    if idx < 2:
+    entry_period = params.get('entry_period', 20)
+    exit_period = params.get('exit_period', 10)
+    
+    if idx < max(entry_period, exit_period) + 1:
         return 0
     
     row = df.iloc[idx]
-    prev = df.iloc[idx - 1]
+    close = row['close']
+    high = row['high']
+    low = row['low']
+    atr = row['atr']
     
-    # 出場檢查
+    # Donchian 通道
+    entry_high = df.iloc[idx-entry_period:idx]['high'].max()
+    entry_low = df.iloc[idx-entry_period:idx]['low'].min()
+    exit_high = df.iloc[idx-exit_period:idx]['high'].max()
+    exit_low = df.iloc[idx-exit_period:idx]['low'].min()
+    
+    # ===== 出場檢查 =====
     if check_exit and position != 0:
-        close = row['close']
-        high = row['high']
-        low = row['low']
-        tp = params.get('tp_pct', 0.02)
-        sl = params.get('sl_pct', 0.01)
+        sl_mult = params.get('sl_atr_mult', 2.0)
         
         if position == 1:
-            if high >= _entry_price * (1 + tp) or low <= _entry_price * (1 - sl):
+            # 止損
+            if low <= _sl_price:
+                _last_exit_idx = idx
+                return True
+            # Donchian 出場 (跌破 exit_period 低點)
+            if close < exit_low:
                 _last_exit_idx = idx
                 return True
         else:
-            if low <= _entry_price * (1 - tp) or high >= _entry_price * (1 + sl):
+            # 止損
+            if high >= _sl_price:
+                _last_exit_idx = idx
+                return True
+            # Donchian 出場 (突破 exit_period 高點)
+            if close > exit_high:
                 _last_exit_idx = idx
                 return True
         return False
     
-    # 冷卻期
-    if idx - _last_exit_idx < params.get('cooldown_bars', 3):
+    # ===== 冷卻期 =====
+    if idx - _last_exit_idx < params.get('cooldown_bars', 2):
         return 0
     
     if position != 0:
         return 0
     
-    # EMA 交叉
-    fast = row['ema8']
-    slow = row['ema21']
-    prev_fast = prev['ema8']
-    prev_slow = prev['ema21']
+    # ===== 趨勢過濾 =====
+    if params.get('use_trend_filter', True):
+        ema = row['ema50']
+        # 只在趨勢方向交易
+        if close > ema:
+            allow_long = True
+            allow_short = False
+        else:
+            allow_long = False
+            allow_short = True
+    else:
+        allow_long = True
+        allow_short = True
     
-    # 金叉做多
-    if prev_fast <= prev_slow and fast > slow:
-        _entry_price = row['close']
+    # ===== Donchian 突破 =====
+    sl_mult = params.get('sl_atr_mult', 2.0)
+    
+    # 突破 entry_period 高點做多
+    if allow_long and high > entry_high:
+        _entry_price = close
+        _entry_idx = idx
+        _sl_price = close - sl_mult * atr
         return 1
     
-    # 死叉做空
-    if prev_fast >= prev_slow and fast < slow:
-        _entry_price = row['close']
+    # 跌破 entry_period 低點做空
+    if allow_short and low < entry_low:
+        _entry_price = close
+        _entry_idx = idx
+        _sl_price = close + sl_mult * atr
         return -1
     
     return 0
